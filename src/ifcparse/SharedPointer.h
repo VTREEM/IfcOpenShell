@@ -24,7 +24,12 @@
  *                                                                              *
  ********************************************************************************/
 
-#ifdef __GNUC__
+#include <ciso646> // Detect vendor-specific macros.
+
+#if _LIBCPP_VERSION // Clang, libc++
+#include <memory>
+#define SHARED_PTR std::shared_ptr
+#elif __GNUC__
 #include <tr1/memory>
 #define SHARED_PTR std::tr1::shared_ptr
 #else
