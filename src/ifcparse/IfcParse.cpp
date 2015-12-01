@@ -87,6 +87,10 @@ IfcSpfStream::IfcSpfStream(const std::string& fn) {
 	valid = true;
 	fseek(stream, 0, SEEK_END);
 	size = (unsigned int) ftell(stream);;
+	if (size == 0) {
+		valid = false;
+		return;
+	}
 	rewind(stream);
 #ifdef BUF_SIZE
 	offset = 0;
