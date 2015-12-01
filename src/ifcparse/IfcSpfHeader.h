@@ -27,8 +27,8 @@ namespace IfcParse {
 
 class HeaderEntity : public IfcAbstractEntity {
 private:	
+    const char * const _datatype;
 	ArgumentList* _list;
-	const char * const _datatype;
 protected:
 	HeaderEntity(const char * const datatype, IfcSpfLexer* lexer) 
 		: _datatype(datatype), _list(0)
