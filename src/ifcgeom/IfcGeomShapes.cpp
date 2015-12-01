@@ -134,7 +134,13 @@ bool IfcGeom::Kernel::convert(const IfcSchema::IfcExtrudedAreaSolid* l, TopoDS_S
 	}
 	
 	if (shape.IsNull()) {	
-		shape = BRepPrimAPI_MakePrism(face, height*dir);
+		try {
+			shape = BRepPrimAPI_MakePrism(face, height*dir);
+		}
+		catch (const std::exception & e)
+		{
+			return (false);
+		}
 	}
 
 	shape.Move(trsf);
