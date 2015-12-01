@@ -434,18 +434,18 @@ namespace IfcGeom {
 		Iterator(const IteratorSettings& settings, IfcParse::IfcFile* file)
 			: settings(settings)
 			, ifc_file(file)
-			, owns_ifc_file(false)
 			, _product_filter(NULL)
 			, _filtering_function(NULL)
+            , owns_ifc_file(false)
 		{
 			_initialize();
 		}
 		Iterator(const IteratorSettings& settings, const std::string& filename)
 			: settings(settings)
 			, ifc_file(new IfcParse::IfcFile)
-			, owns_ifc_file(true)
 			, _product_filter(NULL)
 			, _filtering_function(NULL)
+            , owns_ifc_file(true)
 		{
 			ifc_file->Init(filename);
 			_initialize();
@@ -453,9 +453,9 @@ namespace IfcGeom {
 		Iterator(const IteratorSettings& settings, void* data, int length)
 			: settings(settings)
 			, ifc_file(new IfcParse::IfcFile)
-			, owns_ifc_file(true)
 			, _product_filter(NULL)
 			, _filtering_function(NULL)
+            , owns_ifc_file(true)
 		{
 			ifc_file->Init(data, length);
 			_initialize();
@@ -463,9 +463,9 @@ namespace IfcGeom {
 		Iterator(const IteratorSettings& settings, std::istream& filestream, int length)
 			: settings(settings)
 			, ifc_file(new IfcParse::IfcFile)
-			, owns_ifc_file(true)
 			, _product_filter(NULL)
 			, _filtering_function(NULL)
+            , owns_ifc_file(true)
 		{
 			ifc_file->Init(filestream, length);
 			_initialize();
