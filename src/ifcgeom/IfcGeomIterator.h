@@ -79,6 +79,7 @@
 #include "../ifcgeom/IfcGeomElement.h"
 #include "../ifcgeom/IfcGeomMaterial.h"
 #include "../ifcgeom/IfcGeomIteratorSettings.h"
+#include "../ifcgeom/IfcGeomProductFilter.h"
 #include "../ifcgeom/IfcRepresentationShapeItem.h"
 
 namespace IfcGeom {
@@ -111,6 +112,11 @@ namespace IfcGeom {
 		// double?
 		P unit_magnitude;
 
+		// Pointer to the object on which the filtering callback function is called.
+		ProductFilter* _product_filter;
+		// Pointer to the callback function for filtering products.
+		bool (ProductFilter::*_filtering_function)(IfcSchema::IfcProduct* product);
+
 		void initUnits() {
 			IfcSchema::IfcProject::list::ptr projects = ifc_file->entitiesByType<IfcSchema::IfcProject>();
 			if (projects->size() == 1) {
@@ -118,26 +124,6 @@ namespace IfcGeom {
 				std::pair<std::string, double> length_unit = kernel.initializeUnits(project->UnitsInContext());
 				unit_name = length_unit.first;
 				unit_magnitude = static_cast<P>(length_unit.second);
-			}
-		}
-
-		std::set<IfcSchema::Type::Enum> entities_to_include_or_exclude;
-		bool include_entities_in_processing;
-
-		void populate_set(const std::set<std::string>& include_or_ignore) {
-			entities_to_include_or_exclude.clear();
-			for (std::set<std::string>::const_iterator it = include_or_ignore.begin(); it != include_or_ignore.end(); ++it) {
-				const std::string uppercase_type = boost::to_upper_copy(*it);
-				IfcSchema::Type::Enum ty;
-				try {
-					ty = IfcSchema::Type::FromString(uppercase_type);
-				} catch (const IfcParse::IfcException&) {
-					std::stringstream ss;
-					ss << "'" << *it << "' does not name a valid IFC entity";
-					throw IfcParse::IfcException(ss.str());
-				}
-				entities_to_include_or_exclude.insert(ty);
-				// TODO: Add child classes so that containment in set can be in O(log n)
 			}
 		}
 
@@ -268,16 +254,11 @@ namespace IfcGeom {
 			return ifc_file;
 		}
 
-		void includeEntities(const std::set<std::string>& entities) {
-			populate_set(entities);
-			include_entities_in_processing = true;
-		}
-
-		void excludeEntities(const std::set<std::string>& entities) {
-			populate_set(entities);
-			include_entities_in_processing = false;
-		}
-
+		void setProductFilter(ProductFilter* product_filter, bool (ProductFilter::*func)(IfcSchema::IfcProduct* product))
+		{
+			_product_filter = product_filter;
+			_filtering_function = func;
+        }
 	private:
 		// Move to the next IfcRepresentation
 		void _nextShape() {
@@ -318,17 +299,14 @@ namespace IfcGeom {
 							unfiltered_products->push((*it)->entity->getInverse(IfcSchema::Type::IfcProduct, -1)->as<IfcSchema::IfcProduct>());
 						}
 
-						// Filter the products based on the set of entities being included or excluded for
-						// processing. The set is iterated over te able to filter on subtypes.
 						for ( IfcSchema::IfcProduct::list::it it = unfiltered_products->begin(); it != unfiltered_products->end(); ++it ) {
-							bool found = false;
-							for (std::set<IfcSchema::Type::Enum>::const_iterator jt = entities_to_include_or_exclude.begin(); jt != entities_to_include_or_exclude.end(); ++jt) {
-								if ((*it)->is(*jt)) {
-									found = true;
-									break;
+							// Rely on the ProductFilter to decide if this product should be converted or not
+							if ((_product_filter) && (_filtering_function)){
+								if ((_product_filter->*_filtering_function)(*it)) {
+									ifcproducts->push(*it);
 								}
 							}
-							if (found == include_entities_in_processing) {
+							else {
 								ifcproducts->push(*it);
 							}
 						}
@@ -448,10 +426,6 @@ namespace IfcGeom {
 			current_shape_model = 0;
 			current_serialization = 0;
 
-			// Upon initialisation, the (empty) set of entity names,
-			// should be excluded, or no products would be processed.
-			include_entities_in_processing = false;
-		
 			unit_name = "METER";
 			unit_magnitude = 1.f;
 
@@ -465,6 +439,8 @@ namespace IfcGeom {
 			: settings(settings)
 			, ifc_file(file)
 			, owns_ifc_file(false)
+			, _product_filter(NULL)
+			, _filtering_function(NULL)
 		{
 			_initialize();
 		}
@@ -472,6 +448,8 @@ namespace IfcGeom {
 			: settings(settings)
 			, ifc_file(new IfcParse::IfcFile)
 			, owns_ifc_file(true)
+			, _product_filter(NULL)
+			, _filtering_function(NULL)
 		{
 			ifc_file->Init(filename);
 			_initialize();
@@ -480,6 +458,8 @@ namespace IfcGeom {
 			: settings(settings)
 			, ifc_file(new IfcParse::IfcFile)
 			, owns_ifc_file(true)
+			, _product_filter(NULL)
+			, _filtering_function(NULL)
 		{
 			ifc_file->Init(data, length);
 			_initialize();
@@ -488,6 +468,8 @@ namespace IfcGeom {
 			: settings(settings)
 			, ifc_file(new IfcParse::IfcFile)
 			, owns_ifc_file(true)
+			, _product_filter(NULL)
+			, _filtering_function(NULL)
 		{
 			ifc_file->Init(filestream, length);
 			_initialize();

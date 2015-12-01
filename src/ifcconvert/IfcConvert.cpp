@@ -34,6 +34,7 @@
 #include <boost/program_options.hpp>
 
 #include "../ifcgeom/IfcGeomIterator.h"
+#include "../ifcgeom/IfcGeomProductFilter.h"
 
 #include "../ifcconvert/ColladaSerializer.h"
 #include "../ifcconvert/IgesSerializer.h"
@@ -308,12 +309,14 @@ int main(int argc, char** argv) {
 
 	IfcGeom::Iterator<double> context_iterator(settings, input_filename);
 
+	IfcGeom::ProductFilter productFilter;
 	try {
 		if (include_entities) {
-			context_iterator.includeEntities(entities);
+			productFilter.includeEntities(entities);
 		} else {
-			context_iterator.excludeEntities(entities);
+			productFilter.excludeEntities(entities);
 		}
+		context_iterator.setProductFilter(&productFilter, &IfcGeom::ProductFilter::shouldConvertProduct);
 	} catch (const IfcParse::IfcException& e) {
 		std::cout << "[Error] " << e.what() << std::endl;
 		return 1;
