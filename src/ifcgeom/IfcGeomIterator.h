@@ -296,8 +296,8 @@ namespace IfcGeom {
 						for ( IfcSchema::IfcProduct::list::it jt = unfiltered_products->begin(); jt != unfiltered_products->end(); ++jt ) {
 							// Rely on the ProductFilter to decide if this product should be converted or not
 							if ((_product_filter) && (_filtering_function)){
-								if ((_product_filter->*_filtering_function)(*it)) {
-									ifcproducts->push(*it);
+								if ((_product_filter->*_filtering_function)(*jt)) {
+									ifcproducts->push(*jt);
 								}
 							}
 							else {
