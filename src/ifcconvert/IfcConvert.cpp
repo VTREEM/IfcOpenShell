@@ -43,6 +43,8 @@
 #include "../ifcconvert/XmlSerializer.h"
 #include "../ifcconvert/SvgSerializer.h"
 
+#include <IGESControl_Controller.hxx>
+
 static std::string DEFAULT_EXTENSION = "obj";
 
 void printVersion() {
@@ -199,9 +201,7 @@ int main(int argc, char** argv) {
 	std::set<std::string> entities;
 	for (std::vector<std::string>::const_iterator it = entity_vector.begin(); it != entity_vector.end(); ++it) {
 		std::string lowercase_type = *it;
-		for (std::string::iterator c = lowercase_type.begin(); c != lowercase_type.end(); ++c) {
-			*c = tolower(*c);
-		}
+		std::transform(lowercase_type.begin(), lowercase_type.end(), lowercase_type.begin(), ::tolower);
 		entities.insert(lowercase_type);
 	}
 	
@@ -218,9 +218,7 @@ int main(int argc, char** argv) {
 	}
 
 	std::string output_extension = output_filename.substr(output_filename.size()-4);
-	for (std::string::iterator c = output_extension.begin(); c != output_extension.end(); ++c) {
-		*c = tolower(*c);
-	}
+	std::transform(output_extension.begin(), output_extension.end(), output_extension.begin(), ::tolower);
 
 	// If no entities are specified these are the defaults to skip from output
 	if (entity_vector.empty()) {

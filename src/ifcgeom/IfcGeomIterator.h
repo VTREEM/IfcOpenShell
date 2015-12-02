@@ -168,9 +168,7 @@ namespace IfcGeom {
 				}
 				if (context->hasContextType()) {
 					std::string context_type_lc = context->ContextType();
-					for (std::string::iterator c = context_type_lc.begin(); c != context_type_lc.end(); ++c) {
-						*c = tolower(*c);
-					}
+					std::transform(context_type_lc.begin(), context_type_lc.end(), context_type_lc.begin(), ::tolower);
 					if (context_types.find(context_type_lc) != context_types.end()) {
 						filtered_contexts->push(context);
 					}
@@ -264,7 +262,7 @@ namespace IfcGeom {
 		}
 
 		BRepElement<P>* create_shape_model_for_next_entity() {
-			while ( true ) {
+			for (;;) {
 				IfcSchema::IfcRepresentation* representation;
 
 				// Have we reached the end of our list of representations?
@@ -295,7 +293,7 @@ namespace IfcGeom {
 							unfiltered_products->push((*it)->entity->getInverse(IfcSchema::Type::IfcProduct, -1)->as<IfcSchema::IfcProduct>());
 						}
 
-						for ( IfcSchema::IfcProduct::list::it it = unfiltered_products->begin(); it != unfiltered_products->end(); ++it ) {
+						for ( IfcSchema::IfcProduct::list::it jt = unfiltered_products->begin(); jt != unfiltered_products->end(); ++jt ) {
 							// Rely on the ProductFilter to decide if this product should be converted or not
 							if ((_product_filter) && (_filtering_function)){
 								if ((_product_filter->*_filtering_function)(*it)) {
@@ -303,7 +301,7 @@ namespace IfcGeom {
 								}
 							}
 							else {
-								ifcproducts->push(*it);
+								ifcproducts->push(*jt);
 							}
 						}
 
