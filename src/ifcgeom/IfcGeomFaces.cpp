@@ -889,10 +889,18 @@ bool IfcGeom::Kernel::convert(const IfcSchema::IfcDerivedProfileDef* l, TopoDS_S
 	}
 }
 
+bool IfcGeom::Kernel::convert(const IfcSchema::IfcPlane* l, TopoDS_Shape& face) {
+	gp_Pln pln;
+	convert(l, pln);
+	Handle_Geom_Surface surf = new Geom_Plane(pln);
+	face = BRepBuilderAPI_MakeFace(surf, getValue(GV_PRECISION));
+	return true;
+}
+
 #ifdef USE_IFC4
 
 bool IfcGeom::Kernel::convert(const IfcSchema::IfcBSplineSurfaceWithKnots* l, TopoDS_Shape& face) {
-	SHARED_PTR< IfcTemplatedEntityListList<IfcSchema::IfcCartesianPoint> > cps = l->ControlPointsList();
+	boost::shared_ptr< IfcTemplatedEntityListList<IfcSchema::IfcCartesianPoint> > cps = l->ControlPointsList();
 	std::vector<double> uknots = l->UKnots();
 	std::vector<double> vknots = l->VKnots();
 	std::vector<int> umults = l->UMultiplicities();
@@ -936,14 +944,6 @@ bool IfcGeom::Kernel::convert(const IfcSchema::IfcBSplineSurfaceWithKnots* l, To
 
 	face = BRepBuilderAPI_MakeFace(surf, getValue(GV_PRECISION));
 
-	return true;
-}
-
-bool IfcGeom::Kernel::convert(const IfcSchema::IfcPlane* l, TopoDS_Shape& face) {
-	gp_Pln pln;
-	convert(l, pln);
-	Handle_Geom_Surface surf = new Geom_Plane(pln);
-	face = BRepBuilderAPI_MakeFace(surf, getValue(GV_PRECISION));
 	return true;
 }
 

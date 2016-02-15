@@ -20,23 +20,6 @@
 #ifndef IFCGEOMRENDERSTYLES_H
 #define IFCGEOMRENDERSTYLES_H
 
-#include <ciso646> // Detect vendor-specific macros.
-
-#if _LIBCPP_VERSION // Clang, libc++
-#include <array>
-#define ARRAY std::array
-#elif __GNUC__
-#include <tr1/array>
-#define ARRAY std::tr1::array
-#else
-#if _MSC_VER < 1600
-#include <boost/tr1/array.hpp>
-#else
-#include <array>
-#define ARRAY std::array
-#endif
-#endif
-
 #ifdef USE_IFC4
 #include "../ifcparse/Ifc4.h"
 #else
@@ -48,7 +31,7 @@ namespace IfcGeom {
 	public:
 		class ColorComponent {
 		private:
-			ARRAY<double, 3> data;
+			double data[3];
 		public:
 			ColorComponent(double r, double g, double b) {
 				data[0] = r; data[1] = g; data[2] = b;

@@ -18,7 +18,7 @@
 :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 :: This batch file expects CMake generator as %1 and build configuration type as %2. If not provided,
-:: the GENERATOR_DEFAULT will be used for %1 and BUILD_CFG_DEFAULT for %2 (both set in vs-cfg.cmd)
+:: a deduced generator will be used for %1 and BUILD_CFG_DEFAULT for %2 (both set in vs-cfg.cmd)
 :: Optionally a build type (Build/Rebuild/Clean) can be passed as %3.
 
 @echo off
@@ -33,21 +33,25 @@ setlocal EnableDelayedExpansion
 
 :: Make sure vcvarsall.bat is called and dev env set is up.
 IF "%VSINSTALLDIR%"=="" (
-   call utils\cecho.cmd 0 12 "Visual Studio environment variables not set - cannot proceed!"
+   call utils\cecho.cmd 0 12 "Visual Studio environment variables not set- cannot proceed."
    GOTO :ErrorAndPrintUsage
 )
 
+:: Check for cl.exe - at least the "Typical" Visual Studio 2015 installation does not include the C++ toolset by default,
+:: http://blogs.msdn.com/b/vcblog/archive/2015/07/24/setup-changes-in-visual-studio-2015-affecting-c-developers.aspx
+where cl.exe 2>&1>NUL
+if not %ERRORLEVEL%==0 (
+    call utils\cecho.cmd 0 12 "%~nx0: cl.exe not in PATH. Make sure to select the C++ toolset when installing Visual Studio- cannot proceed."
+    GOTO :ErrorAndPrintUsage
+)
+
 :: Set up variables depending on the used Visual Studio version
-call vs-cfg.cmd %1 %2
+call vs-cfg.cmd %1
+IF NOT %ERRORLEVEL%==0 GOTO :Error
+call build-type-cfg.cmd %2
 IF NOT %ERRORLEVEL%==0 GOTO :Error
 
 set BUILD_TYPE=%3
-
-IF %GENERATOR%=="" (
-   call cecho.cmd 0 12 "GENERATOR not specified - cannot proceed!"
-   GOTO :Error
-)
-
 IF "%BUILD_TYPE%"=="" set BUILD_TYPE=Build
 
 IF NOT "!BUILD_TYPE!"=="Build" IF NOT "!BUILD_TYPE!"=="Rebuild" IF NOT "!BUILD_TYPE!"=="Clean" (
@@ -63,16 +67,15 @@ IF NOT EXIST %INSTALL_DIR%. mkdir %INSTALL_DIR%
 IF %VS_VER%==2008 set PATH=C:\Windows\Microsoft.NET\Framework\v3.5;%PATH%
 
 :: User-configurable build options
-IF "%IFCOS_INSTALL_PYTHON%"=="" set IFCOS_INSTALL_PYTHON=TRUE
-IF "%IFCOS_USE_PYTHON2%"=="" set IFCOS_USE_PYTHON2=FALSE
-IF "%IFCOS_NUM_BUILD_PROCS%"=="" set IFCOS_NUM_BUILD_PROCS=%NUMBER_OF_PROCESSORS%
+IF NOT DEFINED IFCOS_INSTALL_PYTHON set IFCOS_INSTALL_PYTHON=TRUE
+IF NOT DEFINED IFCOS_USE_PYTHON2 set IFCOS_USE_PYTHON2=FALSE
+IF NOT DEFINED IFCOS_NUM_BUILD_PROCS set IFCOS_NUM_BUILD_PROCS=%NUMBER_OF_PROCESSORS%
 
 :: For subroutines
 set MSBUILD_CMD=MSBuild.exe /nologo /m:%IFCOS_NUM_BUILD_PROCS% /t:%BUILD_TYPE%
 REM /clp:ErrorsOnly;WarningsOnly
 :: Note BUILD_TYPE not passed, Clean e.g. wouldn't delete the installed files.
 set INSTALL_CMD=MSBuild.exe /nologo /m:%IFCOS_NUM_BUILD_PROCS%
-set BUILD_DIR=build-vs%VS_VER%-%TARGET_ARCH%
 
 echo.
 
@@ -107,7 +110,7 @@ echo   - Use Python 2 instead of 3.
 echo     Set to TRUE if you wish to use Python 2 instead of 3. Has no effect if IFCOS_INSTALL_PYTHON is not TRUE.
 call cecho.cmd 0 13 "* IFCOS_NUM_BUILD_PROCS`t= %IFCOS_NUM_BUILD_PROCS%"
 echo   - How many MSBuild.exe processes may be run in parallel.
-echo     Defaults to NUMBER_OF_PROCESSORS.
+echo     Defaults to NUMBER_OF_PROCESSORS. Used also by other IfcOpenShell build scripts.
 echo.
 
 call :PrintUsage
@@ -116,7 +119,12 @@ call cecho.cmd 0 14 "Warning: You will need roughly 8 GB of disk space to procee
 echo.
 
 call cecho.cmd black cyan "If you are not ready with the above, press Ctrl-C to abort!"
+
 pause
+echo.
+set START_TIME=%TIME%
+echo Build started at %START_TIME%.
+set BUILD_STARTED=TRUE
 echo.
 
 cd %DEPS_DIR%
@@ -200,6 +208,10 @@ set DEPENDENCY_DIR=%DEPS_DIR%\OpenCOLLADA
 call :GitCloneOrPullRepository https://github.com/KhronosGroup/OpenCOLLADA.git "%DEPENDENCY_DIR%"
 IF NOT %ERRORLEVEL%==0 GOTO :Error
 cd "%DEPENDENCY_DIR%"
+:: Debug build of OpenCOLLADAValidator fails (https://github.com/KhronosGroup/OpenCOLLADA/issues/377) so
+:: so disable it from the build altogether as we have no use for it
+findstr #add_subdirectory(COLLADAValidator) CMakeLists.txt>NUL
+IF NOT %ERRORLEVEL%==0 git apply --reject --whitespace=fix "%~dp0patches\OpenCOLLADA_CMakeLists.txt.patch"
 :: NOTE OpenCOLLADA has been observed to have problems with switching between debug and release builds so
 :: uncomment to following line in order to delete the CMakeCache.txt always if experiencing problems.
 REM IF EXIST "%DEPENDENCY_DIR%\%BUILD_DIR%\CMakeCache.txt". del "%DEPENDENCY_DIR%\%BUILD_DIR%\CMakeCache.txt"
@@ -207,60 +219,28 @@ REM IF EXIST "%DEPENDENCY_DIR%\%BUILD_DIR%\CMakeCache.txt". del "%DEPENDENCY_DIR
 call :RunCMake -DCMAKE_INSTALL_PREFIX="%INSTALL_DIR%\OpenCOLLADA" -DUSE_STATIC_MSVC_RUNTIME=1 -DCMAKE_DEBUG_POSTFIX=d ^
                -DLIBXML2_LIBRARIES="" -DLIBXML2_INCLUDE_DIR="" -DPCRE_INCLUDE_DIR="" -DPCRE_LIBRARIES=""
 IF NOT %ERRORLEVEL%==0 GOTO :Error
-REM TODO OpenCOLLADA takes a long time to build; build only if needed
 REM IF NOT EXIST "%DEPS_DIR%\OpenCOLLADA\%BUILD_DIR%\lib\%DEBUG_OR_RELEASE%\OpenCOLLADASaxFrameworkLoader.lib".
 call :BuildSolution "%DEPENDENCY_DIR%\%BUILD_DIR%\OPENCOLLADA.sln" %DEBUG_OR_RELEASE%
 IF NOT %ERRORLEVEL%==0 GOTO :Error
 call :InstallCMakeProject "%DEPENDENCY_DIR%\%BUILD_DIR%" %DEBUG_OR_RELEASE%
 IF NOT %ERRORLEVEL%==0 GOTO :Error
 
-:oce-win-bundle
-set DEPENDENCY_NAME=oce-win-bundle
-set DEPENDENCY_DIR=%DEPS_DIR%\oce-win-bundle
-:: TODO Temporarily use our own repo until the upstream is fixed
-REM call :GitCloneOrPullRepository https://github.com/QbProg/oce-win-bundle.git "%DEPENDENCY_DIR%"
-call :GitCloneOrPullRepository https://github.com/Tridify/oce-win-bundle.git "%DEPENDENCY_DIR%"
-IF NOT %ERRORLEVEL%==0 GOTO :Error
-IF NOT EXIST "%DEPENDENCY_DIR%\%BUILD_DIR%". (
-    cd "%DEPENDENCY_DIR%"
-    call git branch msvc-enhancements origin/msvc-enhancements
-    IF NOT %ERRORLEVEL%==0 GOTO :Error
-    call git checkout msvc-enhancements
-    IF NOT %ERRORLEVEL%==0 GOTO :Error
-)
-cd "%DEPENDENCY_DIR%"
-call :RunCMake -DOCE_WIN_BUNDLE_INSTALL_DIR="%INSTALL_DIR%\oce-win-bundle" -DBUNDLE_USE_STATIC_MSVC_RUNTIME=1
-IF NOT %ERRORLEVEL%==0 GOTO :Error
-REM IF NOT EXIST "%DEPENDENCY_DIR%\%BUILD_DIR%\FreeImage.cmake\%BUILD_CFG%\FreeImage.dll"
-call :BuildSolution "%DEPENDENCY_DIR%\%BUILD_DIR%\oce-win-bundle.sln" %BUILD_CFG%
-IF NOT %ERRORLEVEL%==0 GOTO :Error
-call :InstallCMakeProject "%DEPENDENCY_DIR%\%BUILD_DIR%" %BUILD_CFG%
-IF NOT %ERRORLEVEL%==0 GOTO :Error
-
 :OCE
 set DEPENDENCY_NAME=Open CASCADE Community Edition
 set DEPENDENCY_DIR=%DEPS_DIR%\oce
-:: TODO Temporarily use our own repo until the upstream has static VC runtime option
-REM call :GitCloneOrPullRepository https://github.com/tpaviot/oce.git "%DEPENDENCY_DIR%"
-call :GitCloneOrPullRepository https://github.com/Tridify/oce.git "%DEPENDENCY_DIR%"
+call :GitCloneOrPullRepository https://github.com/tpaviot/oce.git "%DEPENDENCY_DIR%"
 IF NOT %ERRORLEVEL%==0 GOTO :Error
-IF NOT EXIST "%DEPENDENCY_DIR%\%BUILD_DIR%". (
-    cd "%DEPENDENCY_DIR%"
-    call git branch temp-vs-static-lib-build-fixes origin/temp-vs-static-lib-build-fixes
-    IF NOT %ERRORLEVEL%==0 GOTO :Error
-    call git checkout temp-vs-static-lib-build-fixes
-    IF NOT %ERRORLEVEL%==0 GOTO :Error
-)
+:: Use the oce-win-bundle for OCE's dependencies
+call :GitCloneOrPullRepository https://github.com/QbProg/oce-win-bundle.git "%DEPENDENCY_DIR%\oce-win-bundle"
+IF NOT %ERRORLEVEL%==0 GOTO :Error
+
 cd "%DEPENDENCY_DIR%"
 set OCE_BUNDLE_ROOT_PATH="%INSTALL_DIR%\oce-win-bundle"
-REM -DOCE_USE_BUNDLE_SOURCE=1 REM set OCE_BUNDLE_ROOT_PATH=%DEPS_DIR%\oce-win-bundle
 :: NOTE Specify OCE_NO_LIBRARY_VERSION as rc.exe can fail due to long filenames and huge command-line parameter
 :: input (more than 32,000 characters). Could maybe try using subst for the build dir to overcome this.
-call :RunCMake  -DOCE_BUILD_SHARED_LIB=0 -DOCE_USE_BUNDLE=1 -DOCE_BUNDLE_ROOT_PATH="%OCE_BUNDLE_ROOT_PATH%" ^
-                -DOCE_INSTALL_PREFIX="%INSTALL_DIR%\oce" -DOCE_TESTING=0 -DOCE_NO_LIBRARY_VERSION=1 ^
-                -DOCE_USE_STATIC_MSVC_RUNTIME=1
+call :RunCMake  -DOCE_BUILD_SHARED_LIB=0 -DOCE_INSTALL_PREFIX="%INSTALL_DIR%\oce" -DOCE_TESTING=0 ^
+                -DOCE_NO_LIBRARY_VERSION=1 -DOCE_USE_STATIC_MSVC_RUNTIME=1
 IF NOT %ERRORLEVEL%==0 GOTO :Error
-REM TODO OCE takes a long time to build; build only if needed
 call :BuildSolution "%DEPENDENCY_DIR%\%BUILD_DIR%\OCE.sln" %BUILD_CFG%
 IF NOT %ERRORLEVEL%==0 GOTO :Error
 call :InstallCMakeProject "%DEPENDENCY_DIR%\%BUILD_DIR%" %BUILD_CFG%
@@ -326,6 +306,7 @@ IF EXIST "%DEPS_DIR%\swigwin\". robocopy "%DEPS_DIR%\swigwin" "%INSTALL_DIR%\swi
 :Successful
 echo.
 call %~dp0\utils\cecho.cmd 0 10 "%PROJECT_NAME% dependencies built."
+set IFCOS_SCRIPT_RET=0
 goto :Finish
 
 :ErrorAndPrintUsage
@@ -334,13 +315,30 @@ call :PrintUsage
 :Error
 echo.
 call %~dp0\utils\cecho.cmd 0 12 "An error occurred! Aborting!"
+set IFCOS_SCRIPT_RET=1
 goto :Finish
 
 :Finish
+:: Print end time and elapsed time, http://stackoverflow.com/a/9935540
+if not defined BUILD_STARTED goto :BuildTimeSkipped
+set END_TIME=%TIME%
+for /F "tokens=1-4 delims=:.," %%a in ("%START_TIME%") do (
+   set /A "start=(((%%a*60)+1%%b %% 100)*60+1%%c %% 100)*100+1%%d %% 100"
+)
+for /F "tokens=1-4 delims=:.," %%a in ("%END_TIME%") do (
+   set /A "end=(((%%a*60)+1%%b %% 100)*60+1%%c %% 100)*100+1%%d %% 100"
+)
+set /A elapsed=end-start
+set /A hh=elapsed/(60*60*100), rest=elapsed%%(60*60*100), mm=rest/(60*100), rest%%=60*100, ss=rest/100, cc=rest%%100
+if %mm% lss 10 set mm=0%mm%
+if %ss% lss 10 set ss=0%ss%
+if %cc% lss 10 set cc=0%cc%
+echo.
+echo Build ended at %END_TIME%. Time elapsed %hh%:%mm%:%ss%.%cc%.
+:BuildTimeSkipped
 set PATH=%ORIGINAL_PATH%
 cd %~dp0
-endlocal
-goto :EOF
+exit /b %IFCOS_SCRIPT_RET%
 
 ::::::::::::::::::::::::::::::::::::: Subroutines :::::::::::::::::::::::::::::::::::::
 
@@ -378,12 +376,13 @@ IF NOT EXIST %2. (
     call cecho.cmd 0 13 "Cloning %DEPENDENCY_NAME% into %2."
     pushd "%DEPS_DIR%"
     call git clone %1 %2
+    set RET=%ERRORLEVEL%
 ) ELSE (
     call cecho.cmd 0 13 "%DEPENDENCY_NAME% already cloned. Pulling latest changes."
     pushd %2
     call git pull
+    set RET=0
 )
-set RET=%ERRORLEVEL%
 popd
 exit /b %RET%
 
@@ -430,7 +429,7 @@ echo  2. Install Git and make sure 'git' is accessible from PATH.
 echo   - http://code.google.com/p/tortoisegit/
 echo  3. Install CMake and make sure 'cmake' is accessible from PATH.
 echo   - http://www.cmake.org/
-echo  4. Visual Studio 2008 or newer (2013 or newer recommended).
+echo  4. Visual Studio 2008 or newer (2013 or newer recommended) with C++ toolset.
 echo   - https://www.visualstudio.com/
 echo  5. Run this batch script with Visual Studio environment variables set.
 echo   - https://msdn.microsoft.com/en-us/library/ms229859(v=vs.110).aspx

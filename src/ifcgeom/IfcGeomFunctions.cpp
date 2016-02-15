@@ -100,8 +100,14 @@
 #include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
 #include <TopTools_ListIteratorOfListOfShape.hxx>
 
+#include <Standard_Version.hxx>
+
 #include "../ifcparse/IfcSIPrefix.h"
 #include "../ifcgeom/IfcGeom.h"
+
+#if OCC_VERSION_HEX < 0x60900
+#pragma message("warning: You are linking against Open CASCADE version " OCC_VERSION_COMPLETE ". Version 6.9.0 introduces various improvements with relation to boolean operations. You are advised to upgrade.")
+#endif
 
 bool IfcGeom::Kernel::create_solid_from_compound(const TopoDS_Shape& compound, TopoDS_Shape& shape) {
 	BRepOffsetAPI_Sewing builder;
@@ -160,10 +166,15 @@ bool IfcGeom::Kernel::convert_openings(const IfcSchema::IfcProduct* entity, cons
 		IfcSchema::IfcRelVoidsElement* v = *it;
 		IfcSchema::IfcFeatureElementSubtraction* fes = v->RelatedOpeningElement();
 		if ( fes->is(IfcSchema::Type::IfcOpeningElement) ) {
+			if (!fes->hasRepresentation()) continue;
 
 			// Convert the IfcRepresentation of the IfcOpeningElement
 			gp_Trsf opening_trsf;
-			IfcGeom::Kernel::convert(fes->ObjectPlacement(),opening_trsf);
+			if (fes->hasObjectPlacement()) {
+				try {
+					convert(fes->ObjectPlacement(),opening_trsf);
+				} catch (...) {}
+			}
 
 			// Move the opening into the coordinate system of the IfcProduct
 			opening_trsf.PreMultiply(entity_trsf.Inverted());
@@ -227,7 +238,21 @@ bool IfcGeom::Kernel::convert_openings(const IfcSchema::IfcProduct* entity, cons
 				TopExp_Explorer exp(entity_shape, TopAbs_SOLID);
 
 				for (; exp.More(); exp.Next()) {
+
+#if OCC_VERSION_HEX < 0x60900
 					BRepAlgoAPI_Cut brep_cut(exp.Current(), opening_shape);
+#else
+					BRepAlgoAPI_Cut brep_cut;
+					TopTools_ListOfShape s1s;
+					s1s.Append(exp.Current());
+					TopTools_ListOfShape s2s;
+					s2s.Append(opening_shape);
+					brep_cut.SetFuzzyValue(getValue(GV_PRECISION));
+					brep_cut.SetArguments(s1s);
+					brep_cut.SetTools(s2s);
+					brep_cut.Build();
+#endif
+
 					bool added = false;
 					if ( brep_cut.IsDone() ) {
 						TopoDS_Shape brep_cut_result = brep_cut;
@@ -252,7 +277,19 @@ bool IfcGeom::Kernel::convert_openings(const IfcSchema::IfcProduct* entity, cons
 				entity_shape = compound;
 
 			} else {
+#if OCC_VERSION_HEX < 0x60900
 				BRepAlgoAPI_Cut brep_cut(entity_shape,opening_shape);
+#else
+				BRepAlgoAPI_Cut brep_cut;
+				TopTools_ListOfShape s1s;
+				s1s.Append(entity_shape);
+				TopTools_ListOfShape s2s;
+				s2s.Append(opening_shape);
+				brep_cut.SetFuzzyValue(getValue(GV_PRECISION));
+				brep_cut.SetArguments(s1s);
+				brep_cut.SetTools(s2s);
+				brep_cut.Build();
+#endif
 
 				if ( brep_cut.IsDone() ) {
 					TopoDS_Shape brep_cut_result = brep_cut;
@@ -290,6 +327,7 @@ bool IfcGeom::Kernel::convert_openings(const IfcSchema::IfcProduct* entity, cons
 	return true;
 }
 
+#if OCC_VERSION_HEX < 0x60900
 bool IfcGeom::Kernel::convert_openings_fast(const IfcSchema::IfcProduct* entity, const IfcSchema::IfcRelVoidsElement::list::ptr& openings, 
 							   const IfcGeom::IfcRepresentationShapeItems& entity_shapes, const gp_Trsf& entity_trsf, IfcGeom::IfcRepresentationShapeItems& cut_shapes) {
 	
@@ -302,10 +340,15 @@ bool IfcGeom::Kernel::convert_openings_fast(const IfcSchema::IfcProduct* entity,
 		IfcSchema::IfcRelVoidsElement* v = *it;
 		IfcSchema::IfcFeatureElementSubtraction* fes = v->RelatedOpeningElement();
 		if ( fes->is(IfcSchema::Type::IfcOpeningElement) ) {
+			if (!fes->hasRepresentation()) continue;
 
 			// Convert the IfcRepresentation of the IfcOpeningElement
 			gp_Trsf opening_trsf;
-			IfcGeom::Kernel::convert(fes->ObjectPlacement(),opening_trsf);
+			if (fes->hasObjectPlacement()) {
+				try {
+					convert(fes->ObjectPlacement(),opening_trsf);
+				} catch (...) {}
+			}
 
 			// Move the opening into the coordinate system of the IfcProduct
 			opening_trsf.PreMultiply(entity_trsf.Inverted());
@@ -345,6 +388,7 @@ bool IfcGeom::Kernel::convert_openings_fast(const IfcSchema::IfcProduct* entity,
 		}
 
 		BRepAlgoAPI_Cut brep_cut(entity_shape,opening_compound);
+
 		bool is_valid = false;
 		if ( brep_cut.IsDone() ) {
 			TopoDS_Shape brep_cut_result = brep_cut;
@@ -366,6 +410,93 @@ bool IfcGeom::Kernel::convert_openings_fast(const IfcSchema::IfcProduct* entity,
 	}
 	return true;
 }
+#else
+bool IfcGeom::Kernel::convert_openings_fast(const IfcSchema::IfcProduct* entity, const IfcSchema::IfcRelVoidsElement::list::ptr& openings, 
+							   const IfcGeom::IfcRepresentationShapeItems& entity_shapes, const gp_Trsf& entity_trsf, IfcGeom::IfcRepresentationShapeItems& cut_shapes) {
+	
+	TopTools_ListOfShape opening_shapelist;
+	
+	for ( IfcSchema::IfcRelVoidsElement::list::it it = openings->begin(); it != openings->end(); ++ it ) {
+		IfcSchema::IfcRelVoidsElement* v = *it;
+		IfcSchema::IfcFeatureElementSubtraction* fes = v->RelatedOpeningElement();
+		if ( fes->is(IfcSchema::Type::IfcOpeningElement) ) {
+			if (!fes->hasRepresentation()) continue;
+
+			// Convert the IfcRepresentation of the IfcOpeningElement
+			gp_Trsf opening_trsf;
+			if (fes->hasObjectPlacement()) {
+				try {
+					convert(fes->ObjectPlacement(),opening_trsf);
+				} catch (...) {}
+			}
+
+			// Move the opening into the coordinate system of the IfcProduct
+			opening_trsf.PreMultiply(entity_trsf.Inverted());
+
+			IfcSchema::IfcProductRepresentation* prodrep = fes->Representation();
+			IfcSchema::IfcRepresentation::list::ptr reps = prodrep->Representations();
+
+			IfcGeom::IfcRepresentationShapeItems opening_shapes;
+						
+			for ( IfcSchema::IfcRepresentation::list::it it2 = reps->begin(); it2 != reps->end(); ++ it2 ) {
+				convert_shapes(*it2,opening_shapes);
+			}
+
+			for ( unsigned int i = 0; i < opening_shapes.size(); ++ i ) {
+				gp_GTrsf gtrsf = opening_shapes[i].Placement();
+				gtrsf.PreMultiply(opening_trsf);
+				const TopoDS_Shape& opening_shape = gtrsf.Form() == gp_Other
+					? BRepBuilderAPI_GTransform(opening_shapes[i].Shape(),gtrsf,true).Shape()
+					: (opening_shapes[i].Shape()).Moved(gtrsf.Trsf());
+				opening_shapelist.Append(opening_shape);
+			}
+
+		}
+	}
+
+	// Iterate over the shapes of the IfcProduct
+	for ( IfcGeom::IfcRepresentationShapeItems::const_iterator it3 = entity_shapes.begin(); it3 != entity_shapes.end(); ++ it3 ) {
+		TopoDS_Shape entity_shape_solid;
+		const TopoDS_Shape& entity_shape_unlocated = ensure_fit_for_subtraction(it3->Shape(),entity_shape_solid);
+		const gp_GTrsf& entity_shape_gtrsf = it3->Placement();
+		TopoDS_Shape entity_shape;
+		if ( entity_shape_gtrsf.Form() == gp_Other ) {
+			Logger::Message(Logger::LOG_WARNING,"Applying non uniform transformation to:",entity->entity);
+			entity_shape = BRepBuilderAPI_GTransform(entity_shape_unlocated,entity_shape_gtrsf,true).Shape();
+		} else {
+			entity_shape = entity_shape_unlocated.Moved(entity_shape_gtrsf.Trsf());
+		}
+
+		BRepAlgoAPI_Cut brep_cut;
+		TopTools_ListOfShape s1s;
+		s1s.Append(entity_shape);
+		brep_cut.SetFuzzyValue(getValue(GV_PRECISION));
+		brep_cut.SetArguments(s1s);
+		brep_cut.SetTools(opening_shapelist);
+		brep_cut.Build();
+
+		bool is_valid = false;
+		if ( brep_cut.IsDone() ) {
+			TopoDS_Shape brep_cut_result = brep_cut;
+				
+			BRepCheck_Analyzer analyser(brep_cut_result);
+			is_valid = analyser.IsValid() != 0;
+			if ( is_valid ) {
+				cut_shapes.push_back(IfcGeom::IfcRepresentationShapeItem(brep_cut_result, &it3->Style()));
+			}
+		}
+		if ( !is_valid ) {
+			// Apparently processing the boolean operation failed or resulted in an invalid result
+			// in which case the original shape without the subtractions is returned instead
+			// we try convert the openings in the original way, one by one.
+			Logger::Message(Logger::LOG_WARNING, "Subtracting combined openings compound failed:", entity->entity);
+			return false;
+		}
+		
+	}
+	return true;
+}
+#endif
 
 bool IfcGeom::Kernel::convert_wire_to_face(const TopoDS_Wire& wire, TopoDS_Face& face) {
 	BRepBuilderAPI_MakeFace mf(wire, false);
@@ -553,7 +684,7 @@ void IfcGeom::Kernel::setValue(GeomValue var, double value) {
 	}
 }
 
-double IfcGeom::Kernel::getValue(GeomValue var) {
+double IfcGeom::Kernel::getValue(GeomValue var) const {
 	switch (var) {
 	case GV_DEFLECTION_TOLERANCE:
 		return deflection_tolerance;
@@ -774,8 +905,14 @@ bool IfcGeom::Kernel::flatten_shape_list(const IfcGeom::IfcRepresentationShapeIt
 			_trsf = trsf.Trsf();
 			trsf_valid = true;
 		} catch (...) {}
-		const TopoDS_Shape moved_shape = trsf_valid ? merged.Moved(_trsf) :
-			BRepBuilderAPI_GTransform(merged,trsf,true).Shape();
+
+		const TopoDS_Shape moved_shape = trsf.Form() == gp_Identity
+			? merged
+			: (
+			trsf_valid 
+			? merged.Moved(_trsf)
+			: BRepBuilderAPI_GTransform(merged,trsf,true).Shape()
+			);
 
 		if (shapes.size() == 1) {
 			result = moved_shape;
@@ -807,6 +944,10 @@ bool IfcGeom::Kernel::flatten_shape_list(const IfcGeom::IfcRepresentationShapeIt
 		}
 	}
 
+	if (!fuse) {
+		result = compound;
+	}
+
 	const bool success = !result.IsNull();
 	if (success) {
 		const double precision = getValue(GV_PRECISION);
@@ -816,7 +957,7 @@ bool IfcGeom::Kernel::flatten_shape_list(const IfcGeom::IfcRepresentationShapeIt
 	return success;
 }
 	
-void IfcGeom::Kernel::remove_redundant_points_from_loop(TColgp_SequenceOfPnt& polygon, bool closed, double tol) {
+void IfcGeom::Kernel::remove_duplicate_points_from_loop(TColgp_SequenceOfPnt& polygon, bool closed, double tol) {
 	if (tol <= 0.) tol = getValue(GV_POINT_EQUALITY_TOLERANCE);
 	tol *= tol;
 
@@ -838,6 +979,69 @@ void IfcGeom::Kernel::remove_redundant_points_from_loop(TColgp_SequenceOfPnt& po
 		}
 		if (!removed) break;
 	}
+}
+
+void IfcGeom::Kernel::remove_collinear_points_from_loop(TColgp_SequenceOfPnt& polygon, bool closed, double tol) {
+	if (tol <= 0.) tol = getValue(GV_POINT_EQUALITY_TOLERANCE);
+	const int start = closed ? 1 : 2;
+	const int end = polygon.Length() - (closed ? 0 : 1);
+	std::vector<bool> to_remove(polygon.Length(), false);
+	for (int i = start; i <= end; ++i) {
+		const gp_Pnt& a = polygon.Value(((i - 2 + polygon.Length()) % polygon.Length()) + 1);
+		const gp_Pnt& b = polygon.Value(i);
+		const gp_Pnt& c = polygon.Value((i % polygon.Length()) + 1);
+		const gp_Vec d1 = c.XYZ() - a.XYZ();
+		const gp_Vec d2 = b.XYZ() - a.XYZ();
+		const double dt = d2.Dot(d1) / d1.Dot(d1);
+		const gp_Vec d3 = d1.Scaled(dt);
+		const gp_Pnt b2 = a.XYZ() + d3.XYZ();
+		if (b.Distance(b2) < tol) {
+			to_remove[i-1] = true;
+		}
+	}
+	for (int i = (int) to_remove.size() - 1; i >= 0; --i) {
+		if (to_remove[i]) {
+			polygon.Remove(i+1);
+		}
+	}
+}
+
+bool IfcGeom::Kernel::wire_to_sequence_of_point(const TopoDS_Wire& w, TColgp_SequenceOfPnt& p) {
+	TopExp_Explorer exp(w, TopAbs_EDGE);
+	for (; exp.More(); exp.Next()) {
+		double a, b;
+		Handle_Geom_Curve crv = BRep_Tool::Curve(TopoDS::Edge(exp.Current()), a, b);
+		if (crv->DynamicType() != STANDARD_TYPE(Geom_Line)) {
+			return false;
+		}
+	}
+
+	exp.ReInit();
+
+	int i = 0;
+	for (; exp.More(); exp.Next(), ++i) {
+		TopoDS_Vertex v1, v2;
+		TopExp::Vertices(TopoDS::Edge(exp.Current()), v1, v2, true);
+		if (exp.More()) {
+			if (i == 0) {
+				p.Append(BRep_Tool::Pnt(v1));
+			}
+			p.Append(BRep_Tool::Pnt(v2));
+		}
+	}
+
+	return true;
+}
+
+void IfcGeom::Kernel::sequence_of_point_to_wire(const TColgp_SequenceOfPnt& p, TopoDS_Wire& w, bool close) {
+	BRepBuilderAPI_MakePolygon builder;
+	for (int i = 1; i <= p.Length(); ++i) {
+		builder.Add(p.Value(i));
+	}
+	if (close) {
+		builder.Close();
+	}
+	w = builder.Wire();	
 }
 
 template <typename P>
@@ -896,7 +1100,12 @@ IfcGeom::BRepElement<P>* IfcGeom::Kernel::create_brep_for_representation_and_pro
 	if ( !settings.disable_opening_subtractions() && openings && openings->size() ) {
 		IfcGeom::IfcRepresentationShapeItems opened_shapes;
 		try {
-			if ( settings.faster_booleans() ) {
+#if OCC_VERSION_HEX < 0x60900
+			const bool faster_booleans = settings.faster_booleans();
+#else
+			const bool faster_booleans = true;
+#endif
+			if (faster_booleans) {
 				bool succes = convert_openings_fast(product,openings,shapes,trsf,opened_shapes);
 				if ( ! succes ) {
 					opened_shapes.clear();
@@ -1063,4 +1272,26 @@ std::pair<std::string, double> IfcGeom::Kernel::initializeUnits(IfcSchema::IfcUn
 	}
 
 	return std::pair<std::string, double>(unit_name, unit_magnitude);
+}
+
+const IfcSchema::IfcRepresentationItem* IfcGeom::Kernel::find_item_carrying_style(const IfcSchema::IfcRepresentationItem* item) {
+	if (item->StyledByItem()->size()) {
+		return item;
+	}
+
+	while (item->is(IfcSchema::Type::IfcBooleanClippingResult)) {
+		// All instantiations of IfcBooleanOperand (type of FirstOperand) are subtypes of
+		// IfcGeometricRepresentationItem
+		item = (IfcSchema::IfcGeometricRepresentationItem*) ((IfcSchema::IfcBooleanClippingResult*) item)->FirstOperand();
+		if (item->StyledByItem()->size()) {
+			return item;
+		}
+	}
+
+	// TODO: Ideally this would be done for other entities (such as IfcCsgSolid) as well.
+	// But neither are these very prevalent, nor does the current IfcOpenShell style
+	// mechanism enable to conveniently style subshapes, which would be necessary for
+	// distinctly styled union operands.
+
+	return item;
 }
