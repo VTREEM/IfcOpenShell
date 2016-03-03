@@ -206,17 +206,6 @@ namespace IfcGeom {
 				// WR31: The parent context shall not be another geometric representation sub context. 
 			}
 
-			if (any_precision_encountered) {
-				if (lowest_precision_encountered < 1.e-7) {
-					Logger::Message(Logger::LOG_WARNING, "Precision lower than 0.0000001 meter not enforced");
-					kernel.setValue(IfcGeom::Kernel::GV_PRECISION, 1.e-7);
-				} else {
-					kernel.setValue(IfcGeom::Kernel::GV_PRECISION, lowest_precision_encountered);
-				}
-			} else {
-				kernel.setValue(IfcGeom::Kernel::GV_PRECISION, 1.e-5);
-			}
-
 			if (representations->size() == 0) return false;
 
 			representation_iterator = representations->begin();
